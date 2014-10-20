@@ -102,6 +102,7 @@ static const uint8_t PROGMEM
     143, 164, 179, 185, 184, 174, 158, 139, 118,  97,
      77,  60,  45,  34,  25,  18,  13,   9,   7,   5,
       3,   2,   2,   1,   1,   1,   1 },
+
   // And then this points to the start of the data for each of the columns:
   * const colData[]  = {
     col0data, col1data, col2data, col3data,
@@ -142,7 +143,7 @@ void setup() {
 }
 
 void loop() {
-  uint8_t  i, x, L, *data, nBins, binNum, weighting, c;
+  uint8_t  i, x, L, *data, nBins, binNum, c;
   uint16_t minLvl, maxLvl;
   int      level, y, sum;
 
