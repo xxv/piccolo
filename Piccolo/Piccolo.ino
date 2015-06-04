@@ -147,6 +147,26 @@ void setup() {
   sei(); // Enable interrupts
 }
 
+uint32_t mask_colors(uint8_t b, uint32_t mask) {
+  return (b | (uint32_t)b << 8 | (uint32_t)b << 16) & mask;
+}
+
+uint32_t scale_color(uint8_t b) {
+
+}
+
+void white_sparkle(){
+  for(uint8_t x=0; x<FFT_N/2; x++) {
+    if (spectrum[x] < 10) {
+      strip.setPixelColor(x * 2, 0);
+      strip.setPixelColor(x * 2 + 1, 0);
+    } else {
+      strip.setPixelColor(x * 2, mask_colors(spectrum[x], 0xffffff));
+      strip.setPixelColor(x * 2 + 1, mask_colors(spectrum[x], 0xffffff));
+    }
+  }
+}
+
 void loop() {
   uint8_t  i, x, L, *data, nBins, binNum, c;
   uint16_t minLvl, maxLvl;
@@ -167,56 +187,7 @@ void loop() {
       (((spectrum[x] - L) * (256L - pgm_read_byte(&eq[x]))) >> 8);
   }
 
-  // background?
-  
-  // Downsample spectrum output to 8 columns:
-  for(x=0; x<8; x++) {
-    data   = (uint8_t *)pgm_read_word(&colData[x]);
-    nBins  = pgm_read_byte(&data[0]) + 2;
-    binNum = pgm_read_byte(&data[1]);
-    for(sum=0, i=2; i<nBins; i++)
-      sum += spectrum[binNum++] * pgm_read_byte(&data[i]); // Weighted
-    col[x][colCount] = sum / colDiv[x];                    // Average
-    minLvl = maxLvl = col[x][0];
-    for(i=1; i<10; i++) { // Get range of prior 10 frames
-      if(col[x][i] < minLvl)      minLvl = col[x][i];
-      else if(col[x][i] > maxLvl) maxLvl = col[x][i];
-    }
-    // minLvl and maxLvl indicate the extents of the FFT output, used
-    // for vertically scaling the output graph (so it looks interesting
-    // regardless of volume level).  If they're too close together though
-    // (e.g. at very low volume levels) the graph becomes super coarse
-    // and 'jumpy'...so keep some minimum distance between them (this
-    // also lets the graph go to zero when no sound is playing):
-    if((maxLvl - minLvl) < 8) maxLvl = minLvl + 8;
-    minLvlAvg[x] = (minLvlAvg[x] * 7 + minLvl) >> 3; // Dampen min/max levels
-    maxLvlAvg[x] = (maxLvlAvg[x] * 7 + maxLvl) >> 3; // (fake rolling average)
-
-    // Second fixed-point scale based on dynamic min/max levels:
-    level = 10L * (col[x][colCount] - minLvlAvg[x]) /
-      (long)(maxLvlAvg[x] - minLvlAvg[x]);
-
-    // Clip output and convert to byte:
-    if(level < 0L)      c = 0;
-    else if(level > 10) c = 10; // Allow dot to go a couple pixels off top
-    else                c = (uint8_t)level;
-
-    if(c > peak[x]) peak[x] = c; // Keep dot on top
-
-    if(peak[x] <= 0) { // Empty column?
-      strip.setPixelColor(x, 0);
-      continue;
-    } else if(c < 8) { // Partial column?
-      strip.setPixelColor(x, c * 25);
-    }
-
-    // The 'peak' dot color varies, but doesn't necessarily match
-    // the three screen regions...yellow has a little extra influence.
-    y = 8 - peak[x];
-    //if(y < 2)      matrix.drawPixel(x, y, LED_RED);
-    //else if(y < 6) matrix.drawPixel(x, y, LED_YELLOW);
-    //else           matrix.drawPixel(x, y, LED_GREEN);
-  }
+  white_sparkle();
 
   strip.show();
   
