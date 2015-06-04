@@ -29,7 +29,11 @@ ffft library is provided under its own terms -- see ffft.S for specifics.
 #include <math.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_LEDBackpack.h>
+#include <Adafruit_DotStar.h>
+#include <SPI.h>
+
+// Number of LEDs in the strip
+#define NUMPIXELS 182
 
 // Microphone connects to Analog Pin 0.  Corresponding ADC channel number
 // varies among boards...it's ADC0 on Uno and Mega, ADC7 on Leonardo.
@@ -108,7 +112,7 @@ static const uint8_t PROGMEM
     col0data, col1data, col2data, col3data,
     col4data, col5data, col6data, col7data };
 
-Adafruit_BicolorMatrix matrix = Adafruit_BicolorMatrix();
+Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DOTSTAR_BRG);
 
 void setup() {
   uint8_t i, j, nBins, binNum, *data;
@@ -126,8 +130,9 @@ void setup() {
       colDiv[i] += pgm_read_byte(&data[j]);
   }
 
-  matrix.begin(0x70);
-
+  strip.begin();
+  strip.show();
+  
   // Init ADC free-run mode; f = ( 16MHz/prescaler ) / 13 cycles/conversion 
   ADMUX  = ADC_CHANNEL; // Channel sel, right-adj, use AREF pin
   ADCSRA = _BV(ADEN)  | // ADC enable
@@ -162,11 +167,8 @@ void loop() {
       (((spectrum[x] - L) * (256L - pgm_read_byte(&eq[x]))) >> 8);
   }
 
-  // Fill background w/colors, then idle parts of columns will erase
-  matrix.fillRect(0, 0, 8, 3, LED_RED);    // Upper section
-  matrix.fillRect(0, 3, 8, 2, LED_YELLOW); // Mid
-  matrix.fillRect(0, 5, 8, 3, LED_GREEN);  // Lower section
-
+  // background?
+  
   // Downsample spectrum output to 8 columns:
   for(x=0; x<8; x++) {
     data   = (uint8_t *)pgm_read_word(&colData[x]);
@@ -202,22 +204,22 @@ void loop() {
     if(c > peak[x]) peak[x] = c; // Keep dot on top
 
     if(peak[x] <= 0) { // Empty column?
-      matrix.drawLine(x, 0, x, 7, LED_OFF);
+      strip.setPixelColor(x, 0);
       continue;
     } else if(c < 8) { // Partial column?
-      matrix.drawLine(x, 0, x, 7 - c, LED_OFF);
+      strip.setPixelColor(x, c * 25);
     }
 
     // The 'peak' dot color varies, but doesn't necessarily match
     // the three screen regions...yellow has a little extra influence.
     y = 8 - peak[x];
-    if(y < 2)      matrix.drawPixel(x, y, LED_RED);
-    else if(y < 6) matrix.drawPixel(x, y, LED_YELLOW);
-    else           matrix.drawPixel(x, y, LED_GREEN);
+    //if(y < 2)      matrix.drawPixel(x, y, LED_RED);
+    //else if(y < 6) matrix.drawPixel(x, y, LED_YELLOW);
+    //else           matrix.drawPixel(x, y, LED_GREEN);
   }
 
-  matrix.writeDisplay();
-
+  strip.show();
+  
   // Every third frame, make the peak pixels drop by 1:
   if(++dotCount >= 3) {
     dotCount = 0;
