@@ -28,7 +28,6 @@ ffft library is provided under its own terms -- see ffft.S for specifics.
 #include <ffft.h>
 #include <math.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
 #include <Adafruit_DotStar.h>
 #include <SPI.h>
 
@@ -48,16 +47,23 @@ int16_t       capture[FFT_N];    // Audio capture buffer
 complex_t     bfly_buff[FFT_N];  // FFT "butterfly" buffer
 uint16_t      spectrum[FFT_N/2]; // Spectrum output buffer
 volatile byte samplePos = 0;     // Buffer position counter
+//uint16_t    peak[FFT_N/2];
+
+static PROGMEM const byte
+  palette_flame[] = {
+    /*lvl  R     G     B */
+     0, 0x00, 0x00, 0x00,
+    10, 0x33, 0x00, 0x00,
+    20, 0xff, 0x23, 0x00,
+    30, 0xff, 0xff, 0x00,
+    40, 0xff, 0xff, 0x70,
+  };
 
 byte
-  peak[8],      // Peak level of each column; used for falling dots
+  peak[64];
+byte
   dotCount = 0, // Frame counter for delaying dot-falling speed
   colCount = 0; // Frame counter for storing past column data
-int
-  col[8][10],   // Column levels for the prior 10 frames
-  minLvlAvg[8], // For dynamic adjustment of low & high ends of graph,
-  maxLvlAvg[8], // pseudo rolling averages for the prior few frames.
-  colDiv[8];    // Used when filtering FFT output to 8 columns
 
 /*
 These tables were arrived at through testing, modeling and trial and error,
@@ -76,64 +82,33 @@ static const uint8_t PROGMEM
   // These are scaling quotients for each FFT output column, sort of a
   // graphic EQ in reverse.  Most music is pretty heavy at the bass end.
   eq[64]={
-    255, 175,218,225,220,198,147, 99, 68, 47, 33, 22, 14,  8,  4,  2,
+    255, 255,218,225,220,198,147, 99, 68, 47, 33, 22, 14,  8,  4,  2,
       0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
       0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-      0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
-  // When filtering down to 8 columns, these tables contain indexes
-  // and weightings of the FFT spectrum output values to use.  Not all
-  // buckets are used -- the bottom-most and several at the top are
-  // either noisy or out of range or generally not good for a graph.
-  col0data[] = {  2,  1,  // # of spectrum bins to merge, index of first
-    111,   8 },           // Weights for each bin
-  col1data[] = {  4,  1,  // 4 bins, starting at index 1
-     19, 186,  38,   2 }, // Weights for 4 bins.  Got it now?
-  col2data[] = {  5,  2,
-     11, 156, 118,  16,   1 },
-  col3data[] = {  8,  3,
-      5,  55, 165, 164,  71,  18,   4,   1 },
-  col4data[] = { 11,  5,
-      3,  24,  89, 169, 178, 118,  54,  20,   6,   2,   1 },
-  col5data[] = { 17,  7,
-      2,   9,  29,  70, 125, 172, 185, 162, 118, 74,
-     41,  21,  10,   5,   2,   1,   1 },
-  col6data[] = { 25, 11,
-      1,   4,  11,  25,  49,  83, 121, 156, 180, 185,
-    174, 149, 118,  87,  60,  40,  25,  16,  10,   6,
-      4,   2,   1,   1,   1 },
-  col7data[] = { 37, 16,
-      1,   2,   5,  10,  18,  30,  46,  67,  92, 118,
-    143, 164, 179, 185, 184, 174, 158, 139, 118,  97,
-     77,  60,  45,  34,  25,  18,  13,   9,   7,   5,
-      3,   2,   2,   1,   1,   1,   1 },
+      0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 };
 
-  // And then this points to the start of the data for each of the columns:
-  * const colData[]  = {
-    col0data, col1data, col2data, col3data,
-    col4data, col5data, col6data, col7data };
-
-Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DOTSTAR_BRG);
+Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DOTSTAR_BGR);
 
 void setup() {
-  uint8_t i, j, nBins, binNum, *data;
+  uint8_t i, j, binNum;
 
   memset(peak, 0, sizeof(peak));
-  memset(col , 0, sizeof(col));
-
-  for(i=0; i<8; i++) {
-    minLvlAvg[i] = 0;
-    maxLvlAvg[i] = 512;
-    data         = (uint8_t *)pgm_read_word(&colData[i]);
-    nBins        = pgm_read_byte(&data[0]) + 2;
-    binNum       = pgm_read_byte(&data[1]);
-    for(colDiv[i]=0, j=2; j<nBins; j++)
-      colDiv[i] += pgm_read_byte(&data[j]);
-  }
 
   strip.begin();
   strip.show();
-  
-  // Init ADC free-run mode; f = ( 16MHz/prescaler ) / 13 cycles/conversion 
+
+  for (i = 0; i < NUMPIXELS/2; i++){
+    strip.setPixelColor(NUMPIXELS/2-i+1, 0x0);
+    strip.setPixelColor(NUMPIXELS/2-i, 0xff0000);
+    strip.setPixelColor(NUMPIXELS/2+i-1, 0x0);
+    strip.setPixelColor(NUMPIXELS/2+i, 0x0000ff);
+    strip.show();
+    delay(8);
+  }
+  strip.setPixelColor(0, 0);
+  strip.show();
+
+  // Init ADC free-run mode; f = ( 16MHz/prescaler ) / 13 cycles/conversion
   ADMUX  = ADC_CHANNEL; // Channel sel, right-adj, use AREF pin
   ADCSRA = _BV(ADEN)  | // ADC enable
            _BV(ADSC)  | // ADC start
@@ -151,8 +126,66 @@ uint32_t mask_colors(uint8_t b, uint32_t mask) {
   return (b | (uint32_t)b << 8 | (uint32_t)b << 16) & mask;
 }
 
-uint32_t scale_color(uint8_t b) {
+uint32_t read_color(int x) {
+  return (uint32_t)pgm_read_byte(&palette_flame[x + 1]) << 16 |
+         (uint32_t)pgm_read_byte(&palette_flame[x + 2]) << 8 |
+         (uint32_t)pgm_read_byte(&palette_flame[x + 3]);
+}
 
+uint32_t palette(uint8_t level) {
+  uint8_t level_a, level_b, N;
+  uint32_t color_a, color_b;
+  float offset;
+
+  N = sizeof(palette_flame);
+
+  for (int i = 0; i < N; i+=4){
+    level_b = pgm_read_byte(&palette_flame[i]);
+    color_b = read_color(i);
+
+    if (level == level_b || (level >= level_b && i == (N - 4))) {
+      return color_b;
+    }
+
+    if (i > 0) {
+      if (level < level_b) {
+        return
+               (uint32_t)map(level, level_a, level_b,
+                   (color_a >> 16) & 0xff, (color_b >> 16) & 0xff) << 16 |
+               (uint32_t)map(level, level_a, level_b,
+                   (color_a >> 8) & 0xff, (color_b >> 8) & 0xff) << 8 |
+               (uint32_t)map(level, level_a, level_b,
+                   color_a & 0xff, color_b & 0xff);
+      }
+    }
+
+    level_a = level_b;
+    color_a = color_b;
+  }
+}
+
+void flame_peaks(){
+  for(uint8_t x=0; x<FFT_N/2; x++) {
+    if (peak[x] < 5) {
+      strip.setPixelColor(x * 2, 0);
+      strip.setPixelColor(x * 2 + 1, 0);
+    } else {
+      strip.setPixelColor(x * 2, palette(peak[x]));
+      strip.setPixelColor(x * 2 + 1, palette(peak[x]));
+    }
+  }
+}
+
+void white_peaks(){
+  for(uint8_t x=0; x<FFT_N/2; x++) {
+    if (peak[x] < 10) {
+      strip.setPixelColor(x * 2, 0);
+      strip.setPixelColor(x * 2 + 1, 0);
+    } else {
+      strip.setPixelColor(x * 2, mask_colors(peak[x], 0xffffff));
+      strip.setPixelColor(x * 2 + 1, mask_colors(peak[x], 0xffffff));
+    }
+  }
 }
 
 void white_sparkle(){
@@ -167,8 +200,9 @@ void white_sparkle(){
   }
 }
 
+uint8_t test_i;
 void loop() {
-  uint8_t  i, x, L, *data, nBins, binNum, c;
+  uint8_t  i, x, L, binNum, c, ranged;
   uint16_t minLvl, maxLvl;
   int      level, y, sum;
 
@@ -185,21 +219,33 @@ void loop() {
     L = pgm_read_byte(&noise[x]);
     spectrum[x] = (spectrum[x] <= L) ? 0 :
       (((spectrum[x] - L) * (256L - pgm_read_byte(&eq[x]))) >> 8);
+    ranged = spectrum[x] & 0xff;
+    if(ranged > peak[x]) {
+      peak[x] = ranged;
+    }
+    /*if (maxLvl < spectrum[x]){
+      maxLvl = spectrum[x];
+    }
+    */
   }
 
-  white_sparkle();
+
+  flame_peaks();
+  //white_sparkle();
 
   strip.show();
-  
+  delay(10);
+
   // Every third frame, make the peak pixels drop by 1:
   if(++dotCount >= 3) {
     dotCount = 0;
-    for(x=0; x<8; x++) {
+    for(x=0; x<FFT_N/2; x++) {
       if(peak[x] > 0) peak[x]--;
     }
   }
 
   if(++colCount >= 10) colCount = 0;
+  maxLvl = 0;
 }
 
 ISR(ADC_vect) { // Audio-sampling interrupt
