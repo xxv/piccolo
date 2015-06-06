@@ -27,12 +27,12 @@ ffft library is provided under its own terms -- see ffft.S for specifics.
 #include <avr/pgmspace.h>
 #include <ffft.h>
 #include <math.h>
-#include <Wire.h>
 #include <Adafruit_DotStar.h>
 #include <SPI.h>
 
 // Number of LEDs in the strip
 #define NUMPIXELS 182
+#define CHASE_LEN 180
 
 // Microphone connects to Analog Pin 0.  Corresponding ADC channel number
 // varies among boards...it's ADC0 on Uno and Mega, ADC7 on Leonardo.
@@ -57,10 +57,40 @@ static PROGMEM const byte
     20, 0xff, 0x23, 0x00,
     30, 0xff, 0xff, 0x00,
     40, 0xff, 0xff, 0x70,
+  },
+  palette_matrix[] = {
+     0, 0x00, 0x00, 0x00,
+    10, 0x00, 0xff, 0x00,
+    40, 0xff, 0x00, 0x00,
+  },
+  palette_rainbow[] = {
+     0, 0x00, 0x00, 0x00,
+     5, 0xff, 0x00, 0x00, // R
+    10, 0xff, 0x92, 0x00, // O
+    15, 0xff, 0xff, 0x00, // Y
+    20, 0x00, 0xff, 0x00, // G
+    30, 0x00, 0x00, 0xff, // B
+    40, 0x50, 0x00, 0xff, // V
+  },
+  palette_sparkle[] = {
+    /*lvl  R     G     B */
+     0, 0x00, 0x00, 0x00,
+     2, 0x30, 0x30, 0x30,
+     4, 0x00, 0x00, 0x00,
+     8, 0x30, 0x30, 0x30,
+     10, 0x00, 0x00, 0x00,
+     12, 0x30, 0x30, 0x30,
+    20, 0x66, 0x66, 0x66,
   };
 
+uint8_t decay = 1;
 byte
   peak[64];
+
+byte
+  chase[CHASE_LEN];
+uint8_t chase_offset = 0, chase_slowdown = 0;
+
 byte
   dotCount = 0, // Frame counter for delaying dot-falling speed
   colCount = 0; // Frame counter for storing past column data
@@ -90,9 +120,10 @@ static const uint8_t PROGMEM
 Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DOTSTAR_BGR);
 
 void setup() {
-  uint8_t i, j, binNum;
+  uint8_t i, j;
 
   memset(peak, 0, sizeof(peak));
+  memset(chase, 0, sizeof(chase));
 
   strip.begin();
   strip.show();
@@ -126,13 +157,40 @@ uint32_t mask_colors(uint8_t b, uint32_t mask) {
   return (b | (uint32_t)b << 8 | (uint32_t)b << 16) & mask;
 }
 
-uint32_t read_color(int x) {
-  return (uint32_t)pgm_read_byte(&palette_flame[x + 1]) << 16 |
-         (uint32_t)pgm_read_byte(&palette_flame[x + 2]) << 8 |
-         (uint32_t)pgm_read_byte(&palette_flame[x + 3]);
+uint32_t read_color(const byte* pal) {
+  return (uint32_t)pgm_read_byte(&pal[1]) << 16 |
+         (uint32_t)pgm_read_byte(&pal[2]) << 8 |
+         (uint32_t)pgm_read_byte(&pal[3]);
 }
 
-uint32_t palette(uint8_t level) {
+uint32_t flat_palette(uint8_t level) {
+  uint8_t level_a, level_b, N;
+  uint32_t color_a, color_b;
+  float offset;
+
+  N = sizeof(palette_matrix);
+
+  for (int i = 0; i < N; i+=4){
+    level_b = pgm_read_byte(&palette_matrix[i]);
+    color_b = read_color(&palette_matrix[i]);
+
+    if (level == level_b || (level >= level_b && i == (N - 4))) {
+      return color_b;
+    }
+
+    if (i > 0) {
+      if (level < level_b) {
+        return color_a;
+      }
+    }
+
+    level_a = level_b;
+    color_a = color_b;
+  }
+}
+
+
+uint32_t smooth_palette(uint8_t level) {
   uint8_t level_a, level_b, N;
   uint32_t color_a, color_b;
   float offset;
@@ -141,7 +199,7 @@ uint32_t palette(uint8_t level) {
 
   for (int i = 0; i < N; i+=4){
     level_b = pgm_read_byte(&palette_flame[i]);
-    color_b = read_color(i);
+    color_b = read_color(&palette_flame[i]);
 
     if (level == level_b || (level >= level_b && i == (N - 4))) {
       return color_b;
@@ -170,8 +228,8 @@ void flame_peaks(){
       strip.setPixelColor(x * 2, 0);
       strip.setPixelColor(x * 2 + 1, 0);
     } else {
-      strip.setPixelColor(x * 2, palette(peak[x]));
-      strip.setPixelColor(x * 2 + 1, palette(peak[x]));
+      strip.setPixelColor(x * 2, smooth_palette(peak[x]));
+      strip.setPixelColor(x * 2 + 1, smooth_palette(peak[x]));
     }
   }
 }
@@ -188,6 +246,18 @@ void white_peaks(){
   }
 }
 
+void sparkle(){
+  for(uint8_t x=0; x<FFT_N/2; x++) {
+    if (spectrum[x] < 5) {
+      strip.setPixelColor(x * 2, 0);
+      strip.setPixelColor(x * 2 + 1, 0);
+    } else {
+      strip.setPixelColor(x * 2, flat_palette(spectrum[x]));
+      strip.setPixelColor(x * 2 + 1, flat_palette(spectrum[x]));
+    }
+  }
+}
+
 void white_sparkle(){
   for(uint8_t x=0; x<FFT_N/2; x++) {
     if (spectrum[x] < 10) {
@@ -200,9 +270,38 @@ void white_sparkle(){
   }
 }
 
+void chase_pgm() {
+  uint8_t peak_bin, y, x;
+
+  if (chase_slowdown == 0){
+    for(x=0; x<FFT_N/2; x++) {
+      if (spectrum[x] > spectrum[peak_bin]) {
+        peak_bin = x;
+      }
+    }
+
+    if (peak_bin == 0 || spectrum[peak_bin] < 10) {
+      chase[chase_offset] = 0;
+    } else {
+      //chase[chase_offset] = spectrum[peak_bin] & 0xff;
+      chase[chase_offset] = peak_bin;
+    }
+
+    for (x=0; x<CHASE_LEN; x++) {
+      y = (chase_offset + CHASE_LEN - x) % CHASE_LEN;
+      strip.setPixelColor(x, smooth_palette(chase[y]));
+    }
+
+    chase_offset = (chase_offset + 1) % CHASE_LEN;
+  }
+
+  chase_slowdown = (chase_slowdown + 1) % 1;
+}
+
+
 uint8_t test_i;
 void loop() {
-  uint8_t  i, x, L, binNum, c, ranged;
+  uint8_t  i, x, L, c, ranged;
   uint16_t minLvl, maxLvl;
   int      level, y, sum;
 
@@ -230,8 +329,10 @@ void loop() {
   }
 
 
-  flame_peaks();
+  chase_pgm();
+  //flame_peaks();
   //white_sparkle();
+  //sparkle();
 
   strip.show();
   delay(10);
@@ -240,7 +341,9 @@ void loop() {
   if(++dotCount >= 3) {
     dotCount = 0;
     for(x=0; x<FFT_N/2; x++) {
-      if(peak[x] > 0) peak[x]--;
+      if(peak[x] >= decay) {
+        peak[x] -= decay;
+      }
     }
   }
 
