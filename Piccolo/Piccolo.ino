@@ -92,8 +92,7 @@ byte
 uint8_t chase_offset = 0, chase_slowdown = 0;
 
 byte
-  dotCount = 0, // Frame counter for delaying dot-falling speed
-  colCount = 0; // Frame counter for storing past column data
+  dotCount = 0; // Frame counter for delaying dot-falling speed
 
 /*
 These tables were arrived at through testing, modeling and trial and error,
@@ -222,6 +221,18 @@ uint32_t smooth_palette(uint8_t level) {
   }
 }
 
+void single_bar() {
+  uint16_t level = get_representative_level();
+
+  for (uint8_t x=0; x < NUMPIXELS; x++) {
+    if (x <= level) {
+      strip.setPixelColor(x, smooth_palette(x));
+    } else {
+      strip.setPixelColor(x, 0);
+    }
+  }
+}
+
 void flame_peaks(){
   for(uint8_t x=0; x<FFT_N/2; x++) {
     if (peak[x] < 5) {
@@ -270,15 +281,57 @@ void white_sparkle(){
   }
 }
 
+uint8_t get_peak_bin() {
+  uint8_t peak_bin, x;
+
+  for(x=0; x<FFT_N/2; x++) {
+    if (spectrum[x] > spectrum[peak_bin]) {
+      peak_bin = x;
+    }
+  }
+
+  return peak_bin;
+}
+
+/*
+uint16_t get_average_level() {
+  uint16_t average;
+  uint8_t x;
+
+
+  for(x=0; x<FFT_N/2; x++) {
+    average += spectrum[x];
+  }
+
+  return average/(FFT_N/2);
+}
+*/
+
+uint8_t get_representative_level() {
+  uint16_t average;
+  uint8_t x, col_count = 0;
+
+
+  for(x=0; x<FFT_N/2; x++) {
+    if (spectrum[x] >= 5) {
+      average += spectrum[x];
+      col_count++;
+    }
+  }
+
+  if (col_count == 0) {
+    return 0;
+  } else {
+    return average/col_count;
+  }
+}
+
+
 void chase_pgm() {
   uint8_t peak_bin, y, x;
 
   if (chase_slowdown == 0){
-    for(x=0; x<FFT_N/2; x++) {
-      if (spectrum[x] > spectrum[peak_bin]) {
-        peak_bin = x;
-      }
-    }
+    peak_bin = get_peak_bin();
 
     if (peak_bin == 0 || spectrum[peak_bin] < 10) {
       chase[chase_offset] = 0;
@@ -302,8 +355,8 @@ void chase_pgm() {
 uint8_t test_i;
 void loop() {
   uint8_t  i, x, L, c, ranged;
-  uint16_t minLvl, maxLvl;
-  int      level, y, sum;
+  //uint16_t maxLvl;
+  int      level, y;
 
   while(ADCSRA & _BV(ADIE)); // Wait for audio sampling to finish
 
@@ -329,13 +382,14 @@ void loop() {
   }
 
 
-  chase_pgm();
+  single_bar();
+  //chase_pgm();
   //flame_peaks();
   //white_sparkle();
   //sparkle();
 
   strip.show();
-  delay(10);
+  //delay(10);
 
   // Every third frame, make the peak pixels drop by 1:
   if(++dotCount >= 3) {
@@ -346,9 +400,6 @@ void loop() {
       }
     }
   }
-
-  if(++colCount >= 10) colCount = 0;
-  maxLvl = 0;
 }
 
 ISR(ADC_vect) { // Audio-sampling interrupt
