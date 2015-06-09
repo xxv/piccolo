@@ -47,9 +47,20 @@ int16_t       capture[FFT_N];    // Audio capture buffer
 complex_t     bfly_buff[FFT_N];  // FFT "butterfly" buffer
 uint16_t      spectrum[FFT_N/2]; // Spectrum output buffer
 volatile byte samplePos = 0;     // Buffer position counter
-//uint16_t    peak[FFT_N/2];
+
+#define MIN_LEVEL 5
+#define MIN_SPECTRUM_BIN 8
+#define END_PALETTE 255
+
 
 static PROGMEM const byte
+  palette_test[] = {
+     0, 0x00, 0x00, 0x00,
+    10, 0x00, 0x00, 0xff,
+    20, 0x00, 0xff, 0x00,
+    30, 0xff, 0x00, 0x00,
+    END_PALETTE
+  },
   palette_flame[] = {
     /*lvl  R     G     B */
      0, 0x00, 0x00, 0x00,
@@ -57,11 +68,13 @@ static PROGMEM const byte
     20, 0xff, 0x23, 0x00,
     30, 0xff, 0xff, 0x00,
     40, 0xff, 0xff, 0x70,
+    END_PALETTE
   },
   palette_matrix[] = {
      0, 0x00, 0x00, 0x00,
     10, 0x00, 0xff, 0x00,
     40, 0xff, 0x00, 0x00,
+    END_PALETTE
   },
   palette_rainbow[] = {
      0, 0x00, 0x00, 0x00,
@@ -71,6 +84,7 @@ static PROGMEM const byte
     20, 0x00, 0xff, 0x00, // G
     30, 0x00, 0x00, 0xff, // B
     40, 0x50, 0x00, 0xff, // V
+    END_PALETTE
   },
   palette_sparkle[] = {
     /*lvl  R     G     B */
@@ -78,21 +92,56 @@ static PROGMEM const byte
      2, 0x30, 0x30, 0x30,
      4, 0x00, 0x00, 0x00,
      8, 0x30, 0x30, 0x30,
-     10, 0x00, 0x00, 0x00,
-     12, 0x30, 0x30, 0x30,
+    10, 0x00, 0x00, 0x00,
+    12, 0x30, 0x30, 0x30,
     20, 0x66, 0x66, 0x66,
+    END_PALETTE
+  },
+  palette_underwater[] = {
+     0, 0x00, 0x00, 0x00,
+    40, 0x00, 0x00, 0xff,
+    END_PALETTE
+  },
+  palette_white[] = {
+     0, 0x00, 0x00, 0x00,
+    40, 0xff, 0xff, 0xff,
+    END_PALETTE
+  },
+  palette_sky[] = {
+     0, 0x00, 0x00, 0xaa,
+    20, 0x00, 0x00, 0xaa,
+    30, 0xaa, 0xaa, 0xff,
+    END_PALETTE
   };
 
-uint8_t decay = 1;
-byte
-  peak[64];
 
-byte
-  chase[CHASE_LEN];
+static const byte* palettes[] = {
+  palette_flame,
+  palette_matrix,
+  palette_rainbow,
+  palette_sparkle,
+  palette_underwater,
+  palette_white,
+  palette_sky,
+  0
+};
+
+uint8_t decay = 1;
+byte peak[64];
+
+byte chase[CHASE_LEN];
 uint8_t chase_offset = 0, chase_slowdown = 0;
 
 byte
   dotCount = 0; // Frame counter for delaying dot-falling speed
+
+uint8_t button_in = 0;
+
+#define MODE_COUNT 4
+uint8_t mode = 0;
+
+uint8_t palette = 0;
+
 
 /*
 These tables were arrived at through testing, modeling and trial and error,
@@ -123,6 +172,8 @@ void setup() {
 
   memset(peak, 0, sizeof(peak));
   memset(chase, 0, sizeof(chase));
+
+  pinMode(A3, INPUT);
 
   strip.begin();
   strip.show();
@@ -167,10 +218,12 @@ uint32_t flat_palette(uint8_t level) {
   uint32_t color_a, color_b;
   float offset;
 
-  N = sizeof(palette_matrix);
-
-  for (int i = 0; i < N; i+=4){
+  for (int i = 0; i < 255; i+=4){
     level_b = pgm_read_byte(&palette_matrix[i]);
+    if (level_b == END_PALETTE) {
+      break;
+    }
+
     color_b = read_color(&palette_matrix[i]);
 
     if (level == level_b || (level >= level_b && i == (N - 4))) {
@@ -189,58 +242,62 @@ uint32_t flat_palette(uint8_t level) {
 }
 
 
-uint32_t smooth_palette(uint8_t level) {
-  uint8_t level_a, level_b, N;
-  uint32_t color_a, color_b;
+uint32_t smooth_palette(const byte* pal, uint8_t level) {
+  uint8_t level_a, level_b;
+  uint32_t color_a, color_b, color = 0;
   float offset;
 
-  N = sizeof(palette_flame);
-
-  for (int i = 0; i < N; i+=4){
-    level_b = pgm_read_byte(&palette_flame[i]);
-    color_b = read_color(&palette_flame[i]);
-
-    if (level == level_b || (level >= level_b && i == (N - 4))) {
-      return color_b;
+  for (int i = 0; i < 255; i+=4) {
+    level_b = pgm_read_byte(&pal[i]);
+    if (level_b == END_PALETTE) {
+      color = color_b;
+      break;
     }
 
-    if (i > 0) {
+    color_b = read_color(&pal[i]);
+
+    if (level == level_b) {
+      color = color_b;
+    } else if (i > 0) {
       if (level < level_b) {
-        return
+        color =
                (uint32_t)map(level, level_a, level_b,
                    (color_a >> 16) & 0xff, (color_b >> 16) & 0xff) << 16 |
                (uint32_t)map(level, level_a, level_b,
                    (color_a >> 8) & 0xff, (color_b >> 8) & 0xff) << 8 |
                (uint32_t)map(level, level_a, level_b,
                    color_a & 0xff, color_b & 0xff);
+        break;
       }
     }
 
     level_a = level_b;
     color_a = color_b;
   }
+
+  return color;
 }
 
-void single_bar() {
+void single_bar(const byte* pal) {
   uint16_t level = get_representative_level();
 
   for (uint8_t x=0; x < NUMPIXELS; x++) {
     if (x <= level) {
-      strip.setPixelColor(x, smooth_palette(x));
+      strip.setPixelColor(x, smooth_palette(pal, x));
     } else {
       strip.setPixelColor(x, 0);
     }
   }
 }
 
-void flame_peaks(){
+void smooth_peaks(const byte* pal){
   for(uint8_t x=0; x<FFT_N/2; x++) {
-    if (peak[x] < 5) {
+    if (peak[x] < MIN_LEVEL) {
       strip.setPixelColor(x * 2, 0);
       strip.setPixelColor(x * 2 + 1, 0);
     } else {
-      strip.setPixelColor(x * 2, smooth_palette(peak[x]));
-      strip.setPixelColor(x * 2 + 1, smooth_palette(peak[x]));
+      strip.setPixelColor(x * 2, smooth_palette(pal, peak[x]));
+      strip.setPixelColor(x * 2 + 1, smooth_palette(pal, peak[x]));
     }
   }
 }
@@ -293,27 +350,13 @@ uint8_t get_peak_bin() {
   return peak_bin;
 }
 
-/*
-uint16_t get_average_level() {
-  uint16_t average;
-  uint8_t x;
-
-
-  for(x=0; x<FFT_N/2; x++) {
-    average += spectrum[x];
-  }
-
-  return average/(FFT_N/2);
-}
-*/
-
 uint8_t get_representative_level() {
   uint16_t average;
   uint8_t x, col_count = 0;
 
 
   for(x=0; x<FFT_N/2; x++) {
-    if (spectrum[x] >= 5) {
+    if (spectrum[x] >= MIN_SPECTRUM_BIN) {
       average += spectrum[x];
       col_count++;
     }
@@ -327,7 +370,7 @@ uint8_t get_representative_level() {
 }
 
 
-void chase_pgm() {
+void chase_pgm(const byte* pal) {
   uint8_t peak_bin, y, x;
 
   if (chase_slowdown == 0){
@@ -342,7 +385,7 @@ void chase_pgm() {
 
     for (x=0; x<CHASE_LEN; x++) {
       y = (chase_offset + CHASE_LEN - x) % CHASE_LEN;
-      strip.setPixelColor(x, smooth_palette(chase[y]));
+      strip.setPixelColor(x, smooth_palette(pal, chase[y]));
     }
 
     chase_offset = (chase_offset + 1) % CHASE_LEN;
@@ -355,7 +398,6 @@ void chase_pgm() {
 uint8_t test_i;
 void loop() {
   uint8_t  i, x, L, c, ranged;
-  //uint16_t maxLvl;
   int      level, y;
 
   while(ADCSRA & _BV(ADIE)); // Wait for audio sampling to finish
@@ -375,21 +417,44 @@ void loop() {
     if(ranged > peak[x]) {
       peak[x] = ranged;
     }
-    /*if (maxLvl < spectrum[x]){
-      maxLvl = spectrum[x];
-    }
-    */
   }
 
+  if (button_in == 5) {
+    mode = (mode + 1) % MODE_COUNT;
+    //palette++;
+    if (palettes[palette] == 0) {
+      palette = 0;
+    }
+    // Clear
+    for (x=0; x < NUMPIXELS; x++) {
+      strip.setPixelColor(x, 0);
+    }
+  }
 
-  single_bar();
-  //chase_pgm();
-  //flame_peaks();
-  //white_sparkle();
-  //sparkle();
+  if (digitalRead(A3)) {
+    if (button_in < 255) {
+      button_in++;
+    }
+  } else {
+    button_in = 0;
+  }
+
+  switch (mode) {
+    case 0:
+      smooth_peaks(palettes[palette]);
+      break;
+    case 1:
+      white_sparkle();
+      break;
+    case 2:
+      chase_pgm(palettes[palette]);
+      break;
+    case 3:
+      single_bar(palettes[palette]);
+      break;
+    }
 
   strip.show();
-  //delay(10);
 
   // Every third frame, make the peak pixels drop by 1:
   if(++dotCount >= 3) {
