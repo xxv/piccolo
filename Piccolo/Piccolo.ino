@@ -160,7 +160,7 @@ static const uint8_t PROGMEM
   // These are scaling quotients for each FFT output column, sort of a
   // graphic EQ in reverse.  Most music is pretty heavy at the bass end.
   eq[64]={
-    255, 255,218,225,220,198,147, 99, 68, 47, 33, 22, 14,  8,  4,  2,
+    255, 255,100,100,100,100,100, 99, 68, 47, 33, 22, 14,  8,  4,  2,
       0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
       0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
       0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 };
