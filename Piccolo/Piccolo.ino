@@ -135,7 +135,7 @@ uint8_t chase_offset = 0, chase_slowdown = 0;
 byte
   dotCount = 0; // Frame counter for delaying dot-falling speed
 
-uint8_t button_in = 0;
+uint8_t button_down = 0;
 
 #define MODE_COUNT 4
 uint8_t mode = 0;
@@ -173,7 +173,9 @@ void setup() {
   memset(peak, 0, sizeof(peak));
   memset(chase, 0, sizeof(chase));
 
-  pinMode(A3, INPUT);
+  pinMode(3, OUTPUT);
+  digitalWrite(3, 0);
+  pinMode(4, INPUT_PULLUP);
 
   strip.begin();
   strip.show();
@@ -419,24 +421,30 @@ void loop() {
     }
   }
 
-  if (button_in == 5) {
-    mode = (mode + 1) % MODE_COUNT;
-    //palette++;
-    if (palettes[palette] == 0) {
-      palette = 0;
-    }
-    // Clear
-    for (x=0; x < NUMPIXELS; x++) {
-      strip.setPixelColor(x, 0);
-    }
-  }
-
-  if (digitalRead(A3)) {
-    if (button_in < 255) {
-      button_in++;
+  if (! digitalRead(4)) {
+    if (button_down < 255) {
+      button_down++;
     }
   } else {
-    button_in = 0;
+    if (button_down >= 5) {
+      // Clear
+      for (x=0; x < NUMPIXELS; x++) {
+        strip.setPixelColor(x, 0);
+      }
+
+      // Short press
+      if (button_down  <= 15) {
+        mode = (mode + 1) % MODE_COUNT;
+      // long press
+      } else {
+        palette++;
+        if (palettes[palette] == 0) {
+          palette = 0;
+        }
+      }
+    }
+    button_down = 0;
+
   }
 
   switch (mode) {
