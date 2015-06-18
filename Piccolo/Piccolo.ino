@@ -215,18 +215,18 @@ uint32_t read_color(const byte* pal) {
          (uint32_t)pgm_read_byte(&pal[3]);
 }
 
-uint32_t flat_palette(uint8_t level) {
+uint32_t flat_palette(const byte* pal, uint8_t level) {
   uint8_t level_a, level_b, N;
   uint32_t color_a, color_b;
   float offset;
 
   for (int i = 0; i < 255; i+=4){
-    level_b = pgm_read_byte(&palette_matrix[i]);
+    level_b = pgm_read_byte(&pal[i]);
     if (level_b == END_PALETTE) {
       break;
     }
 
-    color_b = read_color(&palette_matrix[i]);
+    color_b = read_color(&pal[i]);
 
     if (level == level_b || (level >= level_b && i == (N - 4))) {
       return color_b;
@@ -304,38 +304,14 @@ void smooth_peaks(const byte* pal){
   }
 }
 
-void white_peaks(){
-  for(uint8_t x=0; x<FFT_N/2; x++) {
-    if (peak[x] < 10) {
-      strip.setPixelColor(x * 2, 0);
-      strip.setPixelColor(x * 2 + 1, 0);
-    } else {
-      strip.setPixelColor(x * 2, mask_colors(peak[x], 0xffffff));
-      strip.setPixelColor(x * 2 + 1, mask_colors(peak[x], 0xffffff));
-    }
-  }
-}
-
-void sparkle(){
+void sparkle(const byte* pal) {
   for(uint8_t x=0; x<FFT_N/2; x++) {
     if (spectrum[x] < 5) {
       strip.setPixelColor(x * 2, 0);
       strip.setPixelColor(x * 2 + 1, 0);
     } else {
-      strip.setPixelColor(x * 2, flat_palette(spectrum[x]));
-      strip.setPixelColor(x * 2 + 1, flat_palette(spectrum[x]));
-    }
-  }
-}
-
-void white_sparkle(){
-  for(uint8_t x=0; x<FFT_N/2; x++) {
-    if (spectrum[x] < 10) {
-      strip.setPixelColor(x * 2, 0);
-      strip.setPixelColor(x * 2 + 1, 0);
-    } else {
-      strip.setPixelColor(x * 2, mask_colors(spectrum[x], 0xffffff));
-      strip.setPixelColor(x * 2 + 1, mask_colors(spectrum[x], 0xffffff));
+      strip.setPixelColor(x * 2, smooth_palette(pal, spectrum[x]));
+      strip.setPixelColor(x * 2 + 1, smooth_palette(pal, spectrum[x]));
     }
   }
 }
@@ -452,7 +428,8 @@ void loop() {
       smooth_peaks(palettes[palette]);
       break;
     case 1:
-      white_sparkle();
+      //sparkle(palette_white);
+      sparkle(palettes[palette]);
       break;
     case 2:
       chase_pgm(palettes[palette]);
