@@ -31,8 +31,8 @@ ffft library is provided under its own terms -- see ffft.S for specifics.
 #include <SPI.h>
 
 // Number of LEDs in the strip
-#define NUMPIXELS 182
-#define CHASE_LEN 180
+#define NUMPIXELS 128
+#define CHASE_LEN 128
 
 // Microphone connects to Analog Pin 0.  Corresponding ADC channel number
 // varies among boards...it's ADC0 on Uno and Mega, ADC7 on Leonardo.
