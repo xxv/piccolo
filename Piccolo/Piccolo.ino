@@ -86,18 +86,25 @@ static PROGMEM const byte
     40, 0x50, 0x00, 0xff, // V
     END_PALETTE
   },
-  palette_sparkle[] = {
+  palette_teal[] = {
     /*lvl  R     G     B */
      0, 0x00, 0x00, 0x00,
-     2, 0x30, 0x30, 0x30,
-     4, 0x00, 0x00, 0x00,
-     8, 0x30, 0x30, 0x30,
-    10, 0x00, 0x00, 0x00,
-    12, 0x30, 0x30, 0x30,
-    20, 0x66, 0x66, 0x66,
+    10, 0x00, 0x9b, 0x9b,
+    35, 0x00, 0xff, 0xff,
+    40, 0xaf, 0xff, 0xff,
     END_PALETTE
   },
-  palette_underwater[] = {
+  palette_red[] = {
+     0, 0x00, 0x00, 0x00,
+    40, 0xff, 0x00, 0x00,
+    END_PALETTE
+  },
+  palette_purple[] = {
+     0, 0x00, 0x00, 0x00,
+    40, 0xff, 0x00, 0xff,
+    END_PALETTE
+  },
+  palette_blue[] = {
      0, 0x00, 0x00, 0x00,
     40, 0x00, 0x00, 0xff,
     END_PALETTE
@@ -117,16 +124,18 @@ static PROGMEM const byte
 
 static const byte* palettes[] = {
   palette_flame,
-  palette_matrix,
   palette_rainbow,
-  palette_sparkle,
-  palette_underwater,
-  palette_white,
   palette_sky,
+  palette_red,
+  palette_matrix,
+  palette_teal,
+  palette_blue,
+  palette_purple,
+  palette_white,
   0
 };
 
-uint8_t decay = 1;
+#define DECAY 1
 byte peak[64];
 
 byte chase[CHASE_LEN];
@@ -309,7 +318,7 @@ void single_bar(const byte* pal) {
 
   for (uint8_t x=0; x < NUMPIXELS; x++) {
     if (x <= level) {
-      strip.setPixelColor(x, smooth_palette(pal, x));
+      strip.setPixelColor(x, smooth_palette(pal, x/3));
     } else {
       strip.setPixelColor(x, 0);
     }
@@ -482,7 +491,6 @@ void loop() {
       smooth_peaks(palettes[palette]);
       break;
     case 1:
-      //sparkle(palette_white);
       sparkle(palettes[palette]);
       break;
     case 2:
@@ -499,8 +507,8 @@ void loop() {
   if(++dotCount >= 3) {
     dotCount = 0;
     for(x=0; x<FFT_N/2; x++) {
-      if(peak[x] >= decay) {
-        peak[x] -= decay;
+      if(peak[x] >= DECAY) {
+        peak[x] -= DECAY;
       }
     }
   }
