@@ -135,7 +135,23 @@ uint8_t chase_offset = 0, chase_slowdown = 0;
 byte
   dotCount = 0; // Frame counter for delaying dot-falling speed
 
-uint8_t button_down = 0;
+#define BUTTON_COUNT 5
+#define DEBOUNCE_TIME 3
+
+unsigned long button_down_time[BUTTON_COUNT] = {0,0,0,0,0};
+bool button_last_state[BUTTON_COUNT] = {0,0,0,0,0};
+bool button_state[BUTTON_COUNT] = {1,1,1,1,1};
+uint8_t buttons[] = {
+  A1,
+  A2,
+  A3,
+  A4,
+  A5,
+  };
+
+#define BTN_PALETTE 0
+#define BTN_MODE 1
+#define BTN_RESET 4
 
 #define MODE_COUNT 4
 uint8_t mode = 0;
@@ -173,9 +189,16 @@ void setup() {
   memset(peak, 0, sizeof(peak));
   memset(chase, 0, sizeof(chase));
 
-  pinMode(3, OUTPUT);
-  digitalWrite(3, 0);
-  pinMode(4, INPUT_PULLUP);
+  // Using A7 as a ground for buttons
+  pinMode(A7, OUTPUT);
+  digitalWrite(A7, 0);
+
+  // A1-A5 are button inputs
+  pinMode(A1, INPUT_PULLUP);
+  pinMode(A2, INPUT_PULLUP);
+  pinMode(A3, INPUT_PULLUP);
+  pinMode(A4, INPUT_PULLUP);
+  pinMode(A5, INPUT_PULLUP);
 
   strip.begin();
   strip.show();
@@ -202,6 +225,7 @@ void setup() {
   DIDR0  = 1 << ADC_CHANNEL; // Turn off digital input for ADC pin
   TIMSK0 = 0;                // Timer0 off
 
+  digitalWrite(A7, 0);
   sei(); // Enable interrupts
 }
 
@@ -372,6 +396,60 @@ void chase_pgm(const byte* pal) {
   chase_slowdown = (chase_slowdown + 1) % 1;
 }
 
+void reset_leds() {
+  for (uint8_t x=0; x < NUMPIXELS; x++) {
+    strip.setPixelColor(x, 0);
+  }
+}
+
+void on_button_change(uint8_t button, bool value) {
+
+  if (value == LOW) {
+    switch (button) {
+      case BTN_MODE:
+        reset_leds();
+        mode = (mode + 1) % MODE_COUNT;
+        break;
+
+      case BTN_PALETTE:
+        palette++;
+        if (palettes[palette] == 0) {
+          palette = 0;
+        }
+        break;
+
+      case BTN_RESET:
+        mode = 0;
+        palette = 0;
+        reset_leds();
+        break;
+    }
+  }
+}
+
+void update_buttons() {
+  static int counter = 0;
+  counter++;
+
+  for (uint8_t i=0; i < BUTTON_COUNT; i++) {
+    bool raw = digitalRead(buttons[i]);
+
+    if (raw != button_last_state[i]) {
+      button_down_time[i] = counter;
+    }
+
+    if ((counter - button_down_time[i]) > DEBOUNCE_TIME) {
+
+      // State change
+      if (raw != button_state[i]) {
+        button_state[i] = raw;
+
+        on_button_change(i, raw);
+      }
+    }
+    button_last_state[i] = raw;
+  }
+}
 
 uint8_t test_i;
 void loop() {
@@ -397,31 +475,7 @@ void loop() {
     }
   }
 
-  if (! digitalRead(4)) {
-    if (button_down < 255) {
-      button_down++;
-    }
-  } else {
-    if (button_down >= 5) {
-      // Clear
-      for (x=0; x < NUMPIXELS; x++) {
-        strip.setPixelColor(x, 0);
-      }
-
-      // Short press
-      if (button_down  <= 15) {
-        mode = (mode + 1) % MODE_COUNT;
-      // long press
-      } else {
-        palette++;
-        if (palettes[palette] == 0) {
-          palette = 0;
-        }
-      }
-    }
-    button_down = 0;
-
-  }
+  update_buttons();
 
   switch (mode) {
     case 0:
