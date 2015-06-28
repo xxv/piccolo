@@ -72,7 +72,9 @@ static PROGMEM const byte
   },
   palette_matrix[] = {
      0, 0x00, 0x00, 0x00,
+     9, 0x00, 0x00, 0x00,
     10, 0x00, 0xff, 0x00,
+    39, 0x00, 0xff, 0x00,
     40, 0xff, 0x00, 0x00,
     END_PALETTE
   },
@@ -114,6 +116,12 @@ static PROGMEM const byte
     40, 0xff, 0xff, 0xff,
     END_PALETTE
   },
+  palette_bright_white[] = {
+     0, 0x00, 0x00, 0x00,
+     1, 0xff, 0xff, 0xff,
+    40, 0xff, 0xff, 0xff,
+    END_PALETTE
+  },
   palette_sky[] = {
      0, 0x00, 0x00, 0xaa,
     20, 0x00, 0x00, 0xaa,
@@ -121,6 +129,7 @@ static PROGMEM const byte
     END_PALETTE
   };
 
+const byte* cur_palette = palette_flame;
 
 static const byte* palettes[] = {
   palette_flame,
@@ -160,9 +169,16 @@ uint8_t buttons[] = {
 
 #define BTN_PALETTE 0
 #define BTN_MODE 1
+#define BTN_PRESET_1 2
+#define BTN_PRESET_2 3
 #define BTN_RESET 4
 
 #define MODE_COUNT 4
+#define MODE_SMOOTH 0
+#define MODE_SPARKLE 1
+#define MODE_CHASE 2
+#define MODE_BAR 3
+
 uint8_t mode = 0;
 
 uint8_t palette = 0;
@@ -412,7 +428,6 @@ void reset_leds() {
 }
 
 void on_button_change(uint8_t button, bool value) {
-
   if (value == LOW) {
     switch (button) {
       case BTN_MODE:
@@ -422,14 +437,29 @@ void on_button_change(uint8_t button, bool value) {
 
       case BTN_PALETTE:
         palette++;
-        if (palettes[palette] == 0) {
+        cur_palette = palettes[palette];
+
+        if (cur_palette == 0) {
           palette = 0;
+          cur_palette = palettes[palette];
         }
+        break;
+      case BTN_PRESET_1:
+        cur_palette = palette_rainbow;
+        mode = MODE_CHASE;
+        reset_leds();
+        break;
+
+      case BTN_PRESET_2:
+        cur_palette = palette_bright_white;
+        mode = MODE_SPARKLE;
+        reset_leds();
         break;
 
       case BTN_RESET:
         mode = 0;
         palette = 0;
+        cur_palette = palettes[palette];
         reset_leds();
         break;
     }
@@ -487,17 +517,17 @@ void loop() {
   update_buttons();
 
   switch (mode) {
-    case 0:
-      smooth_peaks(palettes[palette]);
+    case MODE_SMOOTH:
+      smooth_peaks(cur_palette);
       break;
-    case 1:
-      sparkle(palettes[palette]);
+    case MODE_SPARKLE:
+      sparkle(cur_palette);
       break;
-    case 2:
-      chase_pgm(palettes[palette]);
+    case MODE_CHASE:
+      chase_pgm(cur_palette);
       break;
-    case 3:
-      single_bar(palettes[palette]);
+    case MODE_BAR:
+      single_bar(cur_palette);
       break;
     }
 
