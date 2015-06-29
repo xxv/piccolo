@@ -30,9 +30,23 @@ ffft library is provided under its own terms -- see ffft.S for specifics.
 #include <Adafruit_DotStar.h>
 #include <SPI.h>
 
+//#define BOARD_BIG
+#define BOARD_SMALL
+
 // Number of LEDs in the strip
+#ifdef BOARD_BIG
+
 #define NUMPIXELS 128
 #define CHASE_LEN 128
+
+#endif
+
+#ifdef BOARD_SMALL
+
+#define NUMPIXELS 48
+#define CHASE_LEN 48
+
+#endif
 
 // Microphone connects to Analog Pin 0.  Corresponding ADC channel number
 // varies among boards...it's ADC0 on Uno and Mega, ADC7 on Leonardo.
@@ -153,12 +167,11 @@ uint8_t chase_offset = 0, chase_slowdown = 0;
 byte
   dotCount = 0; // Frame counter for delaying dot-falling speed
 
-#define BUTTON_COUNT 5
 #define DEBOUNCE_TIME 3
 
-unsigned long button_down_time[BUTTON_COUNT] = {0,0,0,0,0};
-bool button_last_state[BUTTON_COUNT] = {0,0,0,0,0};
-bool button_state[BUTTON_COUNT] = {1,1,1,1,1};
+#ifdef BOARD_BIG
+
+#define BUTTON_COUNT 5
 uint8_t buttons[] = {
   A1,
   A2,
@@ -166,12 +179,35 @@ uint8_t buttons[] = {
   A4,
   A5,
   };
-
 #define BTN_PALETTE 0
 #define BTN_MODE 1
 #define BTN_PRESET_1 2
 #define BTN_PRESET_2 3
 #define BTN_RESET 4
+
+#endif
+
+#ifdef BOARD_SMALL
+
+#define BUTTON_COUNT 3
+uint8_t buttons[] = {
+  4,
+  A1,
+  A2,
+  };
+
+#define BTN_PALETTE 0
+#define BTN_MODE 1
+#define BTN_RESET 2
+#define BTN_PRESET_1 -1
+#define BTN_PRESET_2 -1
+
+#endif
+
+unsigned long button_down_time[BUTTON_COUNT];
+bool button_last_state[BUTTON_COUNT];
+bool button_state[BUTTON_COUNT];
+
 
 #define MODE_COUNT 4
 #define MODE_SMOOTH 0
@@ -214,16 +250,13 @@ void setup() {
   memset(peak, 0, sizeof(peak));
   memset(chase, 0, sizeof(chase));
 
-  // Using A7 as a ground for buttons
-  pinMode(A7, OUTPUT);
-  digitalWrite(A7, 0);
+  memset(button_down_time, 0, sizeof(button_down_time));
+  memset(button_last_state, 0, sizeof(button_last_state));
+  memset(button_state, 1, sizeof(button_state));
 
-  // A1-A5 are button inputs
-  pinMode(A1, INPUT_PULLUP);
-  pinMode(A2, INPUT_PULLUP);
-  pinMode(A3, INPUT_PULLUP);
-  pinMode(A4, INPUT_PULLUP);
-  pinMode(A5, INPUT_PULLUP);
+  for (i=0; i < BUTTON_COUNT; i++) {
+    pinMode(buttons[i], INPUT_PULLUP);
+  }
 
   strip.begin();
   strip.show();
@@ -250,7 +283,16 @@ void setup() {
   DIDR0  = 1 << ADC_CHANNEL; // Turn off digital input for ADC pin
   TIMSK0 = 0;                // Timer0 off
 
+#ifdef BOARD_BIG
+  pinMode(A7, OUTPUT);
   digitalWrite(A7, 0);
+#endif
+
+#ifdef BOARD_SMALL
+  pinMode(3, OUTPUT);
+  digitalWrite(3, 0);
+#endif
+
   sei(); // Enable interrupts
 }
 
