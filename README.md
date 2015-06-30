@@ -1,14 +1,14 @@
-piccolo
-=======
+DotStar Piccolo
+===============
 
-Tiny Arduino music visualizer!
+Tiny, linear Arduino music visualizer!
 
-A great demo of the Adafruit Microphone Amp and our Bi-Color LED backpack.
+Unlike the upstream version which uses a 2D grid, this uses the Dotstar APA102 strips and a couple
+buttons to control them.
 
---> [Bicolor LED Square Pixel Matrix with I2C Backpack][ledMatrix]  
 --> [Electret Microphone Amplifier][microphoneAmp]
 
-Learn more about this project at http://learn.adafruit.com/piccolo
+More info on the project this forked http://learn.adafruit.com/piccolo
 
 [ledMatrix]: http://adafruit.com/products/902
 [microphoneAmp]: http://adafruit.com/products/1063
